@@ -42,6 +42,7 @@ type Provider interface {
 
 type NodeClass interface {
 	CapacityReservations() []v1.CapacityReservation
+	PlacementGroup() []v1.PlacementGroup
 	ZoneInfo() []v1.ZoneInfo
 }
 
@@ -78,6 +79,10 @@ func (p *DefaultProvider) InjectOfferings(
 	})
 	var its []*cloudprovider.InstanceType
 	for _, it := range instanceTypes {
+		// Cluster placement groups don't support burstable (T-series), Mac1, or M7i-flex instance types
+		if p.isIncompatibleWithClusterPlacementGroup(it, nodeClass) {
+			continue
+		}
 		offerings := p.createOfferings(
 			ctx,
 			it,
@@ -85,6 +90,8 @@ func (p *DefaultProvider) InjectOfferings(
 			allZones,
 			subnetZonesToZoneIDs,
 		)
+		// For partition placement groups, expand each offering into N offerings (one per partition)
+		offerings = p.expandPartitionOfferings(offerings, nodeClass)
 		// NOTE: By making this copy one level deep, we can modify the offerings without mutating the results from previous
 		// GetInstanceTypes calls. This should still be done with caution - it is currently done here in the provider, and
 		// once in the instance provider (filterReservedInstanceTypes)
@@ -119,6 +126,11 @@ func (p *DefaultProvider) createOfferings(
 	if ofs, ok := p.cache.Get(p.cacheKeyFromInstanceType(it)); ok && lastSeqNum == seqNum {
 		offerings = append(offerings, ofs.([]*cloudprovider.Offering)...)
 	} else {
+		// Resolve the placement group scope for scoping ICE cache lookups
+		var pgScope awscache.PlacementGroupScope
+		if pgs := nodeClass.PlacementGroup(); len(pgs) > 0 {
+			pgScope.ID = pgs[0].ID
+		}
 		var cachedOfferings []*cloudprovider.Offering
 		for zone := range allZones {
 			for _, capacityType := range it.Requirements.Get(karpv1.CapacityTypeLabelKey).Values() {
@@ -126,7 +138,12 @@ func (p *DefaultProvider) createOfferings(
 				if capacityType == karpv1.CapacityTypeReserved {
 					continue
 				}
-				isUnavailable := p.unavailableOfferings.IsUnavailable(ec2types.InstanceType(it.Name), zone, capacityType)
+				var isUnavailable bool
+				if pgScope.ID != "" {
+					isUnavailable = p.unavailableOfferings.IsUnavailable(ec2types.InstanceType(it.Name), zone, capacityType, pgScope)
+				} else {
+					isUnavailable = p.unavailableOfferings.IsUnavailable(ec2types.InstanceType(it.Name), zone, capacityType)
+				}
 				var price float64
 				var hasPrice bool
 				switch capacityType {
@@ -157,6 +174,25 @@ func (p *DefaultProvider) createOfferings(
 		p.cache.SetDefault(p.cacheKeyFromInstanceType(it), cachedOfferings)
 		p.lastUnavailableOfferingsSeqNum.Store(ec2types.InstanceType(it.Name), seqNum)
 		offerings = append(offerings, cachedOfferings...)
+	}
+	// Add placement group ID requirement to all offerings when a placement group is configured.
+	// This enables the scheduler to match offerings against NodePool/pod constraints on placement group membership,
+	// and enables drift detection when the EC2NodeClass's placement group changes.
+	if pgs := nodeClass.PlacementGroup(); len(pgs) > 0 {
+		for i, offering := range offerings {
+			// Copy the offering and its requirements before mutating to avoid concurrent map writes
+			// on cached offering objects shared across goroutines.
+			reqs := scheduling.NewRequirements(offering.Requirements.Values()...)
+			reqs.Add(
+				scheduling.NewRequirement(v1.LabelPlacementGroupID, corev1.NodeSelectorOpIn, pgs[0].ID),
+			)
+			offerings[i] = &cloudprovider.Offering{
+				Requirements:        reqs,
+				Price:               offering.Price,
+				Available:           offering.Available,
+				ReservationCapacity: offering.ReservationCapacity,
+			}
+		}
 	}
 	if !options.FromContext(ctx).FeatureGates.ReservedCapacity {
 		return offerings
@@ -195,6 +231,72 @@ func (p *DefaultProvider) createOfferings(
 		offerings = append(offerings, offering)
 	}
 	return offerings
+}
+
+// isIncompatibleWithClusterPlacementGroup returns true if the instance type is not supported
+// in cluster placement groups. Per AWS docs, cluster PGs support:
+// - Current generation instances, except burstable (T-series), Mac1, and M7i-flex
+// - Previous generation: only A1, C3, C4, I2, M4, R3, R4
+//
+//nolint:gocyclo
+func (p *DefaultProvider) isIncompatibleWithClusterPlacementGroup(it *cloudprovider.InstanceType, nodeClass NodeClass) bool {
+	pgs := nodeClass.PlacementGroup()
+	if len(pgs) == 0 || pgs[0].Strategy != v1.PlacementGroupStrategyCluster {
+		return false
+	}
+	// Check instance category for burstable (T-series)
+	if category := it.Requirements.Get(v1.LabelInstanceCategory); category.Len() > 0 && category.Has("t") {
+		return true
+	}
+	// Check instance family for Mac instances (mac1, mac2, etc.)
+	if family := it.Requirements.Get(v1.LabelInstanceFamily); family.Len() > 0 {
+		for _, f := range family.Values() {
+			if len(f) >= 3 && f[:3] == "mac" {
+				return true
+			}
+		}
+	}
+	// Check specifically for M7i-flex (AWS docs only call out M7i-flex as incompatible, not other flex types like R8i-flex)
+	if family := it.Requirements.Get(v1.LabelInstanceFamily); family.Len() > 0 && family.Has("m7i") {
+		if flex := it.Requirements.Get(v1.LabelInstanceCapabilityFlex); flex.Len() > 0 && flex.Has("true") {
+			return true
+		}
+	}
+	// TODO: Filter previous-generation instance types not in the allowed set (A1, C3, C4, I2, M4, R3, R4).
+	// This requires access to ec2types.InstanceTypeInfo.CurrentGeneration which is not available at the
+	// offerings layer. In practice, Karpenter's HVM + architecture filters already remove most unsupported
+	// previous-gen types.
+	return false
+}
+
+// expandPartitionOfferings expands each offering into N offerings (one per partition) for partition placement groups.
+// This enables the scheduler to use TopologySpreadConstraints with the partition topology key.
+func (p *DefaultProvider) expandPartitionOfferings(offerings cloudprovider.Offerings, nodeClass NodeClass) cloudprovider.Offerings {
+	pgs := nodeClass.PlacementGroup()
+	if len(pgs) == 0 || pgs[0].Strategy != v1.PlacementGroupStrategyPartition {
+		return offerings
+	}
+	partitionCount := int(pgs[0].PartitionCount)
+	if partitionCount <= 0 {
+		return offerings
+	}
+	var expanded []*cloudprovider.Offering
+	for _, offering := range offerings {
+		for partition := 1; partition <= partitionCount; partition++ {
+			// Copy the base offering's requirements and add the partition label
+			reqs := scheduling.NewRequirements(offering.Requirements.Values()...)
+			reqs.Add(
+				scheduling.NewRequirement(v1.LabelPlacementGroupPartition, corev1.NodeSelectorOpIn, fmt.Sprintf("%d", partition)),
+			)
+			expanded = append(expanded, &cloudprovider.Offering{
+				Requirements:        reqs,
+				Price:               offering.Price,
+				Available:           offering.Available,
+				ReservationCapacity: offering.ReservationCapacity,
+			})
+		}
+	}
+	return expanded
 }
 
 func (p *DefaultProvider) cacheKeyFromInstanceType(it *cloudprovider.InstanceType) string {
