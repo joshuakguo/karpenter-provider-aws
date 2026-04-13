@@ -94,6 +94,7 @@ type Operator struct {
 	CapacityReservationProvider capacityreservation.Provider
 	PlacementGroupProvider      placementgroup.Provider
 	EC2API                      *ec2.Client
+	CABundle                    *string
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -162,6 +163,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(awscache.PlacementGroupAvailabilityTTL, awscache.DefaultCleanupInterval),
 	)
 	amiResolver := amifamily.NewDefaultResolver(cfg.Region)
+	caBundle := lo.Must(GetCABundle(ctx, operator.GetConfig()))
 	launchTemplateProvider := launchtemplate.NewDefaultProvider(
 		ctx,
 		cache.New(awscache.DefaultTTL, awscache.DefaultCleanupInterval),
@@ -171,7 +173,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		securityGroupProvider,
 		subnetProvider,
 		placementGroupProvider,
-		lo.Must(GetCABundle(ctx, operator.GetConfig())),
+		caBundle,
 		operator.Elected(),
 		kubeDNSIP,
 		clusterEndpoint,
@@ -236,6 +238,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		CapacityReservationProvider: capacityReservationProvider,
 		PlacementGroupProvider:      placementGroupProvider,
 		EC2API:                      ec2api,
+		CABundle:                    caBundle,
 	}
 }
 

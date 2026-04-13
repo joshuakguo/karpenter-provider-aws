@@ -89,9 +89,10 @@ func NewControllers(
 	capacityReservationProvider capacityreservationprovider.Provider,
 	placementGroupProvider placementgroup.Provider,
 	amiResolver amifamily.Resolver,
+	caBundle *string,
 ) []controller.Controller {
 	controllers := []controller.Controller{
-		nodeclasshash.NewController(kubeClient),
+		nodeclasshash.NewController(kubeClient, caBundle),
 		nodeclass.NewController(clk, kubeClient, cloudProvider, recorder, cfg.Region, subnetProvider, securityGroupProvider, amiProvider, instanceProfileProvider, instanceTypeProvider, launchTemplateProvider, capacityReservationProvider, placementGroupProvider, ec2api, validationCache, recreationCache, amiResolver, options.FromContext(ctx).DisableDryRun),
 		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
 		nodeclaimtagging.NewController(kubeClient, cloudProvider, instanceProvider),

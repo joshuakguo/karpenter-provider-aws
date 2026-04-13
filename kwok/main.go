@@ -15,6 +15,7 @@ package main
 import (
 	"sync"
 
+	"github.com/samber/lo"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -102,6 +103,7 @@ func main() {
 			op.CapacityReservationProvider,
 			op.PlacementGroupProvider,
 			op.AMIResolver,
+			lo.ToPtr(""),
 		)...).
 		Start(ctx)
 	wg.Wait()
