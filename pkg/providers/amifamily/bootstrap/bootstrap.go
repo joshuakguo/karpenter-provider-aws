@@ -32,7 +32,8 @@ type Options struct {
 	ClusterName         string
 	ClusterEndpoint     string
 	ClusterCIDR         *string
-	KubeletConfig       *v1.KubeletConfiguration
+	KubeletConfig       *v1.ParsedKubeletConfig
+	KubeletConfigRaw    v1.KubeletConfiguration
 	Taints              []corev1.Taint    `hash:"set"`
 	Labels              map[string]string `hash:"set"`
 	CABundle            *string

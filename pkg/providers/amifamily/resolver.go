@@ -101,7 +101,7 @@ type LaunchTemplate struct {
 // AMIFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type AMIFamily interface {
 	DescribeImageQuery(ctx context.Context, ssmProvider ssm.Provider, k8sVersion string, amiVersion string) (DescribeImageQuery, error)
-	UserData(kubeletConfig *v1.KubeletConfiguration, taints []corev1.Taint, labels map[string]string, caBundle *string, instanceTypes []*cloudprovider.InstanceType, customUserData *string, instanceStorePolicy *v1.InstanceStorePolicy) bootstrap.Bootstrapper
+	UserData(kubeletConfig *v1.ParsedKubeletConfig, kubeletConfigRaw v1.KubeletConfiguration, taints []corev1.Taint, labels map[string]string, caBundle *string, instanceTypes []*cloudprovider.InstanceType, customUserData *string, instanceStorePolicy *v1.InstanceStorePolicy) bootstrap.Bootstrapper
 	DefaultBlockDeviceMappings() []*v1.BlockDeviceMapping
 	DefaultMetadataOptions() *v1.MetadataOptions
 	EphemeralBlockDevice() *string
@@ -240,7 +240,7 @@ func (o Options) DefaultMetadataOptions() *v1.MetadataOptions {
 	}
 }
 
-func (r DefaultResolver) defaultClusterDNS(opts *Options, kubeletConfig *v1.KubeletConfiguration) *v1.KubeletConfiguration {
+func (r DefaultResolver) defaultClusterDNS(opts *Options, kubeletConfig *v1.ParsedKubeletConfig) *v1.ParsedKubeletConfig {
 	if opts.KubeDNSIP == nil {
 		return kubeletConfig
 	}
@@ -248,7 +248,7 @@ func (r DefaultResolver) defaultClusterDNS(opts *Options, kubeletConfig *v1.Kube
 		return kubeletConfig
 	}
 	if kubeletConfig == nil {
-		return &v1.KubeletConfiguration{
+		return &v1.ParsedKubeletConfig{
 			ClusterDNS: []string{opts.KubeDNSIP.String()},
 		}
 	}
@@ -275,15 +275,16 @@ func (r DefaultResolver) resolveLaunchTemplates(
 	placementGroupID string,
 	placementGroupPartition int32,
 ) []*LaunchTemplate {
-	kubeletConfig := &v1.KubeletConfiguration{}
-	if nodeClass.Spec.Kubelet != nil {
-		kubeletConfig = nodeClass.Spec.Kubelet.DeepCopy()
+	kubeletConfigRaw := nodeClass.Spec.Kubelet.DeepCopy()
+	parsedKubeletConfig, _ := v1.ParseKubeletConfig(kubeletConfigRaw)
+	if parsedKubeletConfig == nil {
+		parsedKubeletConfig = &v1.ParsedKubeletConfig{}
 	}
-	if kubeletConfig.MaxPods == nil {
+	if parsedKubeletConfig.MaxPods == nil {
 		// nolint:gosec
 		// We know that it's not possible to have values that would overflow int32 here since we control
 		// the maxPods values that we pass in here
-		kubeletConfig.MaxPods = lo.ToPtr(int32(maxPods))
+		parsedKubeletConfig.MaxPods = lo.ToPtr(int32(maxPods))
 	}
 	taints := lo.Flatten([][]corev1.Taint{
 		nodeClaim.Spec.Taints,
@@ -314,7 +315,8 @@ func (r DefaultResolver) resolveLaunchTemplates(
 		resolved := &LaunchTemplate{
 			Options: options,
 			UserData: amiFamily.UserData(
-				r.defaultClusterDNS(options, kubeletConfig),
+				r.defaultClusterDNS(options, parsedKubeletConfig),
+				kubeletConfigRaw,
 				taints,
 				RejectForbiddenLabels(options.Labels),
 				options.CABundle,
