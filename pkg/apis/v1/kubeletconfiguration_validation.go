@@ -15,6 +15,7 @@ limitations under the License.
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"reflect"
@@ -163,7 +164,7 @@ func ValidateKubeletConfig(kc KubeletConfiguration) []error {
 	// Validate evictionSoftGracePeriod duration values from raw input
 	if v, ok := kc["evictionSoftGracePeriod"]; ok {
 		raw := map[string]string{}
-		if unmarshalErr := unmarshalJSON(v, &raw); unmarshalErr == nil {
+		if unmarshalErr := json.Unmarshal(v.Raw, &raw); unmarshalErr == nil {
 			for key, durStr := range raw {
 				if _, parseErr := time.ParseDuration(durStr); parseErr != nil {
 					errs = append(errs, fmt.Errorf("spec.kubelet.evictionSoftGracePeriod: invalid duration %q for key %q", durStr, key))
