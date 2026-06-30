@@ -81,7 +81,7 @@ var _ = Describe("IPv6", func() {
 	})
 	It("should provision an IPv6 node by discovering kubeletConfig kube-dns IP", func() {
 		clusterDNSAddr := env.ExpectIPv6ClusterDNS()
-		nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{ClusterDNS: []string{clusterDNSAddr}}
+		nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{"clusterDNS": []string{clusterDNSAddr}})
 		pod := coretest.Pod()
 		env.ExpectCreated(pod, nodeClass, nodePool)
 		env.EventuallyExpectHealthy(pod)
@@ -94,7 +94,7 @@ var _ = Describe("IPv6", func() {
 	})
 	It("should provision a static IPv6 prefix with node launch and set IPv6 as primary in the primary network interface", func() {
 		clusterDNSAddr := env.ExpectIPv6ClusterDNS()
-		nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{ClusterDNS: []string{clusterDNSAddr}}
+		nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{"clusterDNS": []string{clusterDNSAddr}})
 		pod := coretest.Pod()
 		env.ExpectCreated(pod, nodeClass, nodePool)
 		env.EventuallyExpectHealthy(pod)

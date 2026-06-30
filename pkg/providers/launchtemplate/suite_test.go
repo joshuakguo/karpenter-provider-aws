@@ -470,13 +470,13 @@ var _ = Describe("LaunchTemplate Provider", func() {
 			Expect(lo.Uniq(launchtemplateResult)[0]).To(Equal(launchtemplate.LaunchTemplateName(&amifamily.LaunchTemplate{Options: &amifamily.Options{}})))
 		})
 		It("should generate different launch template names based on kubelet configuration", func() {
-			kubeletChanges := []*v1.KubeletConfiguration{
+			kubeletChanges := []*v1.ParsedKubeletConfig{
 				{},
 				{KubeReserved: map[string]string{string(corev1.ResourceCPU): "20"}},
 				{SystemReserved: map[string]string{string(corev1.ResourceMemory): "10Gi"}},
 				{EvictionHard: map[string]string{"memory.available": "52%"}},
 				{EvictionSoft: map[string]string{"nodefs.available": "132%"}},
-				{MaxPods: aws.Int32(20)},
+				{MaxPods: lo.ToPtr[int32](20)},
 			}
 			launchtemplateResult := []string{}
 			for _, kubelet := range kubeletChanges {
@@ -1033,7 +1033,7 @@ var _ = Describe("LaunchTemplate Provider", func() {
 			}))
 
 			nodeClass.Spec.AMISelectorTerms = []v1.AMISelectorTerm{{Alias: "al2@latest"}}
-			nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{}
+			nodeClass.Spec.Kubelet = v1.KubeletConfiguration{}
 			it := instancetype.NewInstanceType(ctx,
 				info,
 				"",
@@ -1042,12 +1042,12 @@ var _ = Describe("LaunchTemplate Provider", func() {
 				nodeClass.Spec.BlockDeviceMappings,
 				nodeClass.Spec.InstanceStorePolicy,
 				nil,
-				nodeClass.Spec.Kubelet.MaxPods,
-				nodeClass.Spec.Kubelet.PodsPerCore,
-				nodeClass.Spec.Kubelet.KubeReserved,
-				nodeClass.Spec.Kubelet.SystemReserved,
-				nodeClass.Spec.Kubelet.EvictionHard,
-				nodeClass.Spec.Kubelet.EvictionSoft,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
 				nodeClass.AMIFamily(),
 				nil,
 			)

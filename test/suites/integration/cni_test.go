@@ -42,7 +42,7 @@ var _ = Describe("CNITests", func() {
 		Expect(allocatablePods).To(Equal(eniLimitedPodsFor(node.Labels["node.kubernetes.io/instance-type"])))
 	})
 	It("should set max pods to 110 if maxPods is set in kubelet", func() {
-		nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{MaxPods: lo.ToPtr[int32](110)}
+		nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{"maxPods": int32(110)})
 		pod := test.Pod()
 		env.ExpectCreated(pod, nodeClass, nodePool)
 		env.EventuallyExpectHealthy(pod)
