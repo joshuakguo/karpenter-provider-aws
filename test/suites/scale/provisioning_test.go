@@ -178,9 +178,9 @@ var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), fu
 		expectedNodeCount := 60
 		replicas := replicasPerNode * expectedNodeCount
 		deployment.Spec.Replicas = lo.ToPtr[int32](int32(replicas))
-		nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{
-			MaxPods: lo.ToPtr[int32](int32(maxPodDensity)),
-		}
+		nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{
+			"maxPods": int32(maxPodDensity),
+		})
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			// With Prefix Delegation enabled, .large instances can have 434 pods.
 			Key:      v1.LabelInstanceSize,
@@ -212,9 +212,9 @@ var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), fu
 		expectedNodeCount := 60
 		replicas := replicasPerNode * expectedNodeCount
 		deployment.Spec.Replicas = lo.ToPtr[int32](int32(replicas))
-		nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{
-			MaxPods: lo.ToPtr[int32](int32(maxPodDensity)),
-		}
+		nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{
+			"maxPods": int32(maxPodDensity),
+		})
 		test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
 				// With Prefix Delegation enabled, .large instances can have 434 pods.

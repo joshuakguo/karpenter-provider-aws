@@ -63,7 +63,7 @@ type NodeClass interface {
 	CPUOptions() *v1.CPUOptions
 	InstanceStorePolicy() *v1.InstanceStorePolicy
 	NetworkInterfaces() []*v1.NetworkInterface
-	KubeletConfiguration() *v1.KubeletConfiguration
+	KubeletConfiguration() v1.KubeletConfiguration
 	PlacementGroupSelector() *v1.PlacementGroupSelector
 	ZoneInfo() []v1.ZoneInfo
 	ConnectionTracking() *v1.ConnectionTracking

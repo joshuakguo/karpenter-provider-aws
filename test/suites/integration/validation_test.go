@@ -124,20 +124,20 @@ var _ = Describe("Validation", func() {
 			Expect(env.Client.Update(env.Context, nodeClass)).ToNot(Succeed())
 		})
 		It("should error if imageGCHighThresholdPercent is less than imageGCLowThresholdPercent", func() {
-			nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{
-				ImageGCHighThresholdPercent: lo.ToPtr(int32(10)),
-				ImageGCLowThresholdPercent:  lo.ToPtr(int32(60)),
-			}
+			nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{
+				"imageGCHighThresholdPercent": int32(10),
+				"imageGCLowThresholdPercent":  int32(60),
+			})
 			Expect(env.Client.Create(env.Context, nodeClass)).ToNot(Succeed())
 		})
 		It("should error if imageGCHighThresholdPercent or imageGCLowThresholdPercent is negative", func() {
-			nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{
-				ImageGCHighThresholdPercent: lo.ToPtr(int32(-10)),
-			}
+			nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{
+				"imageGCHighThresholdPercent": int32(-10),
+			})
 			Expect(env.Client.Create(env.Context, nodeClass)).ToNot(Succeed())
-			nodeClass.Spec.Kubelet = &v1.KubeletConfiguration{
-				ImageGCLowThresholdPercent: lo.ToPtr(int32(-10)),
-			}
+			nodeClass.Spec.Kubelet = v1.MustMakeKubeletConfiguration(map[string]interface{}{
+				"imageGCLowThresholdPercent": int32(-10),
+			})
 			Expect(env.Client.Create(env.Context, nodeClass)).ToNot(Succeed())
 		})
 	})

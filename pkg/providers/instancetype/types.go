@@ -73,10 +73,7 @@ func NewDefaultResolver(region string) *DefaultResolver {
 }
 
 func (d *DefaultResolver) CacheKey(nodeClass NodeClass) string {
-	kc := &v1.KubeletConfiguration{}
-	if resolved := nodeClass.KubeletConfiguration(); resolved != nil {
-		kc = resolved
-	}
+	kc := nodeClass.KubeletConfiguration()
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	blockDeviceMappingsHash, _ := hashstructure.Hash(nodeClass.BlockDeviceMappings(), hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	capacityReservationHash, _ := hashstructure.Hash(nodeClass.CapacityReservations(), hashstructure.FormatV2, nil)
@@ -97,9 +94,10 @@ func (d *DefaultResolver) Resolve(ctx context.Context, info ec2types.InstanceTyp
 	// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 	// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
 	// !!! Important !!!
-	kc := &v1.KubeletConfiguration{}
-	if resolved := nodeClass.KubeletConfiguration(); resolved != nil {
-		kc = resolved
+	parsed, err := v1.ParseKubeletConfig(nodeClass.KubeletConfiguration())
+	if err != nil {
+		// If parsing fails, use empty defaults — validation will catch this at reconciliation time
+		parsed = &v1.ParsedKubeletConfig{}
 	}
 	return NewInstanceType(
 		ctx,
@@ -110,12 +108,12 @@ func (d *DefaultResolver) Resolve(ctx context.Context, info ec2types.InstanceTyp
 		nodeClass.BlockDeviceMappings(),
 		nodeClass.InstanceStorePolicy(),
 		nodeClass.NetworkInterfaces(),
-		kc.MaxPods,
-		kc.PodsPerCore,
-		kc.KubeReserved,
-		kc.SystemReserved,
-		kc.EvictionHard,
-		kc.EvictionSoft,
+		parsed.MaxPods,
+		parsed.PodsPerCore,
+		parsed.KubeReserved,
+		parsed.SystemReserved,
+		parsed.EvictionHard,
+		parsed.EvictionSoft,
 		nodeClass.AMIFamily(),
 		lo.Filter(nodeClass.CapacityReservations(), func(cr v1.CapacityReservation, _ int) bool {
 			return cr.InstanceType == string(info.InstanceType)

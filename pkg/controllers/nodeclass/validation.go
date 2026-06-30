@@ -128,6 +128,20 @@ func (v *Validation) Reconcile(ctx context.Context, nodeClass *v1.EC2NodeClass) 
 		}
 	}
 
+	// Validate kubelet configuration before proceeding with other checks
+	if errs := v1.ValidateKubeletConfig(nodeClass.Spec.Kubelet); len(errs) > 0 {
+		messages := make([]string, 0, len(errs))
+		for _, e := range errs {
+			messages = append(messages, e.Error())
+		}
+		nodeClass.StatusConditions(status.WithClock(v.clk)).SetFalse(
+			v1.ConditionTypeValidationSucceeded,
+			"InvalidKubeletConfiguration",
+			strings.Join(messages, "; "),
+		)
+		return reconcile.Result{}, nil
+	}
+
 	if _, ok := lo.Find(v.requiredConditions(), func(cond string) bool {
 		return nodeClass.StatusConditions(status.WithClock(v.clk)).Get(cond).IsFalse()
 	}); ok {
